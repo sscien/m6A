@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: transparent;
+            font-family: 'Google Sans', 'Arial', sans-serif;
+        }
+        .slide {
+            width: 100%;
+            max-width: 1280px;
+            margin: 0 auto;
+            background: transparent;
+            aspect-ratio: 16/9;
+            display: flex;
+            flex-direction: column;
+        }
+        .title {
+            font-size: 32px;
+            color: #202124;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 20px;
+            flex-grow: 1;
+        }
+        .matrix {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 16px;
+            position: relative;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            overflow: auto;
+            height: 450px;
+        }
+        .matrix h3 {
+            font-size: 24px;
+            margin: 0 0 15px 0;
+            color: #1a73e8;
+            position: sticky;
+            top: 0;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px 0;
+            z-index: 1;
+        }
+        .matrix-row {
+            display: flex;
+            padding: 4px 0;
+            border-bottom: 1px solid #f1f3f4;
+        }
+        .matrix-row.header {
+            font-weight: bold;
+            border-bottom: 2px solid #1a73e8;
+            position: sticky;
+            top: 54px;
+            background: white;
+            z-index: 1;
+            padding: 8px 0;
+        }
+        .matrix-cell {
+            flex: 1;
+            padding: 0 10px;
+        }
+        .highlight-mut {
+            background-color: rgba(255, 215, 0, 0.4);
+            font-weight: bold;
+        }
+        .highlight-control {
+            background-color: rgba(144, 238, 144, 0.4);
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+            position: sticky;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 -2px 6px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 12px 24px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            cursor: pointer;
+            margin: 0 10px;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #1557b0;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+        }
+        .legend-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+        }
+        .status {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 18px;
+            color: #202124;
+            min-height: 27px;
+            font-weight: 500;
+        }
+        #counter {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 16px;
+            color: #5f6368;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide">
+        <h1 class="title">Mutation and m6A Analysis: Sample Selection</h1>
+        
+        <div id="counter">Iteration: <span id="iteration-count">0</span>/100</div>
+        
+        <div class="grid">
+            <div class="matrix" id="mutation-matrix">
+                <h3>Mutation Matrix</h3>
+                <div class="matrix-row header">
+                    <div class="matrix-cell">Sample</div>
+                    <div class="matrix-cell">Position</div>
+                    <div class="matrix-cell">VAF</div>
+                    <div class="matrix-cell">Type</div>
+                </div>
+                <div id="mutation-rows"></div>
+            </div>
+            
+            <div class="matrix" id="m6a-matrix">
+                <h3>m6A Peak Matrix</h3>
+                <div class="matrix-row header">
+                    <div class="matrix-cell">Sample</div>
+                    <div class="matrix-cell">Position</div>
+                    <div class="matrix-cell">m6A_value</div>
+                </div>
+                <div id="m6a-rows"></div>
+            </div>
+        </div>
+
+        <div class="status" id="status"></div>
+
+        <div class="controls">
+            <button onclick="selectNextMutated()">Select Mutated Sample</button>
+            <button onclick="selectRandomControls()">Select 20 Controls</button>
+            <button onclick="reset()">Reset</button>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(255, 215, 0, 0.4);"></div>
+                <span>Mutated Sample</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(144, 238, 144, 0.4);"></div>
+                <span>Control Samples</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const samples = Array.from({length: 30}, (_, i) => `Sample${i + 1}`);
+        const position = 1234567;
+        let currentMutatedIndex = -1;
+        let iterationCount = 0;
+        
+        function generateData() {
+            const mutatedIndices = [2, 15, 28];
+            
+            const mutationData = samples.map((sample, index) => ({
+                sample,
+                position,
+                vaf: mutatedIndices.includes(index) ? (Math.random() * 0.5 + 0.1).toFixed(2) : "0.00",
+                type: mutatedIndices.includes(index) ? ['SNV', 'INS', 'DEL'][Math.floor(Math.random() * 3)] : "-"
+            }));
+
+            const m6aData = samples.map(sample => ({
+                sample,
+                position,
+                m6a_value: (Math.random() * 0.5 + 0.3).toFixed(2)
+            }));
+
+            return { mutationData, m6aData, mutatedIndices };
+        }
+
+        function renderMatrix() {
+            const mutationRows = document.getElementById('mutation-rows');
+            const m6aRows = document.getElementById('m6a-rows');
+            
+            mutationData.forEach((row, index) => {
+                const div = document.createElement('div');
+                div.className = 'matrix-row';
+                div.dataset.index = index;
+                div.innerHTML = `
+                    <div class="matrix-cell">${row.sample}</div>
+                    <div class="matrix-cell">${row.position}</div>
+                    <div class="matrix-cell">${row.vaf}</div>
+                    <div class="matrix-cell">${row.type}</div>
+                `;
+                mutationRows.appendChild(div);
+            });
+
+            m6aData.forEach((row, index) => {
+                const div = document.createElement('div');
+                div.className = 'matrix-row';
+                div.dataset.index = index;
+                div.innerHTML = `
+                    <div class="matrix-cell">${row.sample}</div>
+                    <div class="matrix-cell">${row.position}</div>
+                    <div class="matrix-cell">${row.m6a_value}</div>
+                `;
+                m6aRows.appendChild(div);
+            });
+        }
+
+        function selectNextMutated() {
+            reset();
+            currentMutatedIndex++;
+            if (currentMutatedIndex >= mutatedIndices.length) {
+                currentMutatedIndex = 0;
+                iterationCount = 0;
+            }
+            
+            const mutIndex = mutatedIndices[currentMutatedIndex];
+            const mutationRows = document.querySelectorAll('#mutation-matrix .matrix-row');
+            const m6aRows = document.querySelectorAll('#m6a-matrix .matrix-row');
+            
+            mutationRows[mutIndex + 1].classList.add('highlight-mut');
+            m6aRows[mutIndex + 1].classList.add('highlight-mut');
+
+            document.getElementById('status').textContent = 
+                `Selected mutated sample ${mutationData[mutIndex].sample} (VAF = ${mutationData[mutIndex].vaf})`;
+        }
+
+        function selectRandomControls() {
+            if (currentMutatedIndex === -1) {
+                alert("Please select a mutated sample first");
+                return;
+            }
+
+            document.querySelectorAll('.highlight-control').forEach(el => {
+                el.classList.remove('highlight-control');
+            });
+
+            const nonMutatedIndices = Array.from({length: 30}, (_, i) => i)
+                .filter(i => !mutatedIndices.includes(i));
+            
+            const selectedControls = [];
+            for (let i = 0; i < 20; i++) {
+                const randomIndex = Math.floor(Math.random() * nonMutatedIndices.length);
+                const selectedIndex = nonMutatedIndices.splice(randomIndex, 1)[0];
+                selectedControls.push(selectedIndex);
+            }
+
+            const mutationRows = document.querySelectorAll('#mutation-matrix .matrix-row');
+            const m6aRows = document.querySelectorAll('#m6a-matrix .matrix-row');
+
+            selectedControls.forEach(index => {
+                mutationRows[index + 1].classList.add('highlight-control');
+                m6aRows[index + 1].classList.add('highlight-control');
+            });
+
+            iterationCount++;
+            document.getElementById('iteration-count').textContent = iterationCount;
+
+            document.getElementById('status').textContent += 
+                `\nSelected 20 random control samples (Iteration ${iterationCount}/100)`;
+        }
+
+        function reset() {
+            const allRows = document.querySelectorAll('.matrix-row');
+            allRows.forEach(row => {
+                row.classList.remove('highlight-mut', 'highlight-control');
+            });
+            document.getElementById('status').textContent = '';
+        }
+
+        const { mutationData, m6aData, mutatedIndices } = generateData();
+        renderMatrix();
+    </script>
+</body>
+</html>
